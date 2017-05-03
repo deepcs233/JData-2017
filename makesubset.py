@@ -1,5 +1,6 @@
 #-*- coding: utf-8 -*-
 from collections import Counter
+import pickle
 
 import pandas as pd
 import numpy as np
@@ -155,8 +156,11 @@ def get_product_behavior(df_act):
     return df_a
 
 
-MINI_TRAIN_NUM = int(nums * 0.2)
-MINI_TEST_NUM = int(nums * 0.3)
+with open('cache/users_set.pkl','r') as f:
+    clean_users_set = pickle.load(f)
+
+MINI_TRAIN_NUM = int(nums * 0.25)
+MINI_TEST_NUM = int(nums * 0.35)
 '''
 TRAIN_NUM = int(nums * 0.6)
 VALID_NUM = int(nums * 0.8)
@@ -165,7 +169,7 @@ TEST_NUM = int(nums * 1)
 '''
 
 
-df[: MINI_TRAIN_NUM].to_csv(MINI_USER_TRAIN, index=False)
+df[: MINI_TRAIN_NUM].to_csv(MINI_USER_TRAIN, index= False)
 df[MINI_TRAIN_NUM: MINI_TEST_NUM].to_csv(MINI_USER_TEST, index=False)
 '''
 df[: TRAIN_NUM].to_csv(USER_TRAIN, index=False)
@@ -174,11 +178,11 @@ df[VALID_NUM: TEST_NUM].to_csv(USER_TEST, index=False)
 
 '''
 
-mini_user_train_set = set(df[: MINI_TRAIN_NUM]['user_id'])
-mini_user_test_set = set(df[MINI_TRAIN_NUM: MINI_TEST_NUM]['user_id'])
+mini_user_train_set = set(df[: MINI_TRAIN_NUM]['user_id']) #- clean_users_set
+mini_user_test_set = set(df[MINI_TRAIN_NUM: MINI_TEST_NUM]['user_id']) #- clean_users_set
 
 acts = []
-print 'ok'
+print ('ok')
 
 # 使用重复变量节约内存
 def getAction():
@@ -201,42 +205,40 @@ df_act.to_csv(ALL_ACTION_FILE, index=False)
 # 计算product的各项特征
 df_product_behavior = get_product_behavior(df_act)
 
-
-
 '''
 df_act = pd.read_csv(ALL_ACTION_FILE)
-print 'ok'
+print ('ok')
 df_act['user_id'] = df_act['user_id'].astype(np.int32)
 
 # df_act.to_csv(ALL_ACTION_FILE)
 
-df_act['Chosed'] = df_act['user_id'].map(lambda x: x in mini_user_train_set)
+df_act['Chosed'] = df_act['user_id'].map(lambda x: x in mini_user_train_set )
 acts_train = df_act[df_act['Chosed'] == True]
 del acts_train['Chosed']
-print 'ok'
+print ('ok')
 
 
 df_act['Chosed'] = df_act['user_id'].map(lambda x: x in mini_user_test_set)
 acts_test = df_act[df_act['Chosed'] == True]
 del acts_test['Chosed']
-print 'ok'
+print ('ok')
 
 
-'''
+
 df_act_train_label = acts_train[acts_train['time'] > '2016-04-10 23:59:59']
-'''
+
 df_act = acts_train[acts_train['time'] < '2016-04-10 23:59:59']
 df_user_train_behavior = get_user_behavior(df_act)
 df_act.to_csv(MINI_ACT_TRAIN, index=False)
 
-print 'ok'
-'''
+print ('ok')
+
 df_act_test_label = acts_test[acts_test['time'] > '2016-04-10 23:59:59']
-'''
+
 df_act = acts_test[acts_test['time'] < '2016-04-10 23:59:59']
 df_user_test_behavior = get_user_behavior(df_act)
 df_act.to_csv(MINI_ACT_TEST, index=False)
-print 'ok'
+print ('ok')
 
 
 del acts_test
@@ -246,13 +248,13 @@ del acts_train
 df_u = pd.read_csv(MINI_USER_TRAIN)
 df_u = pd.merge(df_u, df_user_train_behavior, how='inner')
 df_u.to_csv(MINI_USER_TRAIN, ignore_index=True)
-print 'ok'
+print ('ok')
 df_u = pd.read_csv(MINI_USER_TEST)
 df_u = pd.merge(df_u, df_user_test_behavior, how='inner')
 df_u.to_csv(MINI_USER_TEST, ignore_index=True)
 
 '''
-print 'ok'
+print ('ok')
 # 将product的基本信息,评论,与UI拼接
 COMMENT_FILE = "data/JData_Comment.csv"
 PRODUCT_FILE = "data/JData_Product.csv"
@@ -265,8 +267,8 @@ df_cp = pd.merge(df_p,df_c, how='inner')
 df_cp = pd.merge(df_cp, df_product_behavior, how='inner')
 df_cp.to_csv(NEW_PRODUCT, ignore_index=True)
 '''
-'''
-print 'ok'
+
+print ('ok')
 # 生成Train,与Test 的Labels
 
 df_act = df_act_train_label
@@ -279,7 +281,7 @@ df_act = df_act[df_act['type'] == 4]
 df_act = df_act[df_act['cate'] == 8][['user_id','sku_id']]
 df_act.to_csv(MINI_TEST_LABEL, ignore_index=True)
 
-print 'ok'
+print ('ok')
 
-'''
+
 

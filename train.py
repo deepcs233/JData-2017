@@ -2,9 +2,11 @@
 
 import pandas as pd
 import numpy as np
-from datetime import datetime
+
 
 import eval
+import genfeat
+import xgboost as xgb
 
 ACTION_201602_FILE = "data/JData_Action_201602.csv"
 ACTION_201603_FILE = "data/JData_Action_201603.csv"
@@ -15,6 +17,9 @@ USER_FILE = "data/JData_User.csv"
 NEW_USER_FILE = "cache/JData_User_New.csv"
 
 ALL_ACTION_FILE = 'sub/raw_all_Action.csv'
+ALL_PRODUCT_FILE = 'sub/all_product.csv'
+ALL_USER_FILE = 'sub/all_user.csv'
+
 
 MINI_USER_TRAIN = 'sub/mini_user_train.csv'
 MINI_USER_TEST = 'sub/mini_user_test.csv'
@@ -30,40 +35,58 @@ NEW_PRODUCT = 'sub/product.csv'
 MINI_TRAIN_LABEL = 'sub/mini_train_label.csv'
 MINI_TEST_LABEL =  'sub/mini_test_label.csv'
 
+RESULT_FILE = 'res/result.csv'
+TMP_ACT_SUBMIT = 'cache/act_submit.csv'
+TMP_USER_SUBMIT = 'cache/user_submit.csv'
 # Display format
 pd.options.display.float_format = '{:,.3f}'.format
 
-def simple_choose(group):
-    gs = set(group['type'])
-    if 2 in gs and 3 not in gs and 4 not in gs:
-        group['label'] = 1
-    else:
-        group['label'] = 0
-    return group[['sku_id', 'user_id', 'label']]
 
-def get_data_by_date(data, date1, date2):
-    '''
-    Input:
-        data1: (month, day)
-    Output:
-        data in [date1, date2]
-    '''
-    date1 = '2016-0' + str(date1[0]) + '-' + '{:0>2}'.format(date1[1]) + ' 00:00:00'
-    date2 = '2016-0' + str(date2[0]) + '-' + '{:0>2}'.format(date2[1]) + ' 23:59:59'
-    print  date1, date2
-    res = data[data['time'] >= date1]
-    res = res[res['time'] <= date2]
-    return res
+# raw
+df_r, label_r, users_r = genfeat.get_train_data()
+# test
+df_t, label_t, users_t = genfeat.get_test_data()
 
-df_act = pd.read_csv(MINI_ACT_TRAIN)
-df_act = df_act[['user_id','sku_id','type']]
+# UnderSample
+df_r, label_r, users_r = genfeat.underSample(df_r, label_r, users_r, prob = 0.03)
 
-res = df_act.groupby(['user_id','sku_id'], as_index=False).apply(simple_choose)
-res = res[res['label'] > 0]
-#  将重复的用户－商品对丢弃
-res = res.drop_duplicates()
-label = pd.read_csv(MINI_TRAIN_LABEL)
-eval.eval(res,label)
 
-# 保存结果
-res.to_csv('res/test.csv',columns=['user_id','sku_id'], index=False)
+dtrain=xgb.DMatrix(df_r, label=label_r)
+dtest=xgb.DMatrix(df_t, label=label_t)
+param = {'learning_rate' : 0.1, 'n_estimators': 1000, 'max_depth': 3, 
+        'min_child_weight': 5, 'gamma': 0, 'subsample': 1.0, 'colsample_bytree': 0.8,
+        'scale_pos_weight': 1, 'eta': 0.05, 'silent': 1, 'objective': 'binary:logistic'}
+num_round = 283
+param['nthread'] = 4
+param['eval_metric'] = "auc"
+plst = list(param.items())
+plst += [('eval_metric', 'logloss')]
+evallist = [(dtest, 'eval'), (dtrain, 'train')]
+bst=xgb.train( plst, dtrain, num_round, evallist)
+'''
+sub_user_index, sub_trainning_date, sub_label = make_train_set(sub_start_date, sub_end_date,
+                                                               sub_test_start_date, sub_test_end_date)
+'''
+def test(threshold = 0.5):
+    dtest = xgb.DMatrix(df_t)
+    y = bst.predict(dtest)
+    pred = pd.concat([users_t,pd.DataFrame(y)],axis=1,ignore_index=False)
+    pr = pred[pred[0]> threshold]
+    del pr[0]
+    yture = pd.concat([users_t, pd.DataFrame(label_t)], axis =1)
+    yture = yture[yture['label']>0]
+    pr = pr.drop_duplicates('user_id')
+    return eval.eval(pr,yture, True)
+
+
+def submit():
+    df_s,users_s = genfeat.gen_submit_data()
+    dtest = xgb.DMatrix(df_s)
+    y = bst.predict(dtest)
+    pred = pd.concat([users_s,pd.DataFrame(y)],axis=1,ignore_index=False)
+    pred = pred[pred[0]>0.8]
+    del pred[0]
+    pred = pred.drop_duplicates('user_id')
+    pred['user_id'] = pred['user_id'].astype(np.int32)
+    pred.to_csv(RESULT_FILE, index=False)
+    

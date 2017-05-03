@@ -23,7 +23,10 @@ def eval(pred, label, verbose = False):
             pos += 1
         else:
             neg += 1
-    all_user_acc = 1.0 * pos / ( pos + neg)
+    if (pos + neg) == 0:
+        all_user_acc = 0
+    else:
+        all_user_acc = 1.0 * pos / (pos + neg)
     all_user_recall = 1.0 * pos / len(all_user_set)
 
 
@@ -33,21 +36,29 @@ def eval(pred, label, verbose = False):
             pos += 1
         else:
             neg += 1
-    all_item_acc = 1.0 * pos / ( pos + neg)
+            
+    if (pos + neg) == 0:
+        all_item_acc = 0
+    else:
+        all_item_acc = 1.0 * pos / (pos + neg)
     all_item_recall = 1.0 * pos / len(all_user_item_pair)
 
 
-
-    F11 = 6.0 * all_user_recall * all_user_acc / (5.0 * all_user_recall + all_user_acc)
-    F12 = 5.0 * all_item_acc * all_item_recall / (2.0 * all_item_recall + 3 * all_item_acc)
-    score = 0.4 * F11 + 0.6 * F12
+    if (all_user_recall + all_user_acc) == 0:
+        F11 = 0
+        F12 = 0
+        score = 0
+    else:
+        F11 = 6.0 * all_user_recall * all_user_acc / (5.0 * all_user_recall + all_user_acc)
+        F12 = 5.0 * all_item_acc * all_item_recall / (2.0 * all_item_recall + 3 * all_item_acc)
+        score = 0.4 * F11 + 0.6 * F12
 
     if verbose:
-        print '所有用户中预测购买用户的准确率为 ' + str(all_user_acc)
-        print '所有用户中预测购买用户的召回率' + str(all_user_recall)
-        print '所有用户中预测购买商品的准确率为 ' + str(all_item_acc)
-        print '所有用户中预测购买商品的召回率' + str(all_item_recall)
-        print 'F11=' + str(F11)
-        print 'F12=' + str(F12)
-        print 'score=' + str(score)
+        print ('所有用户中预测购买用户的准确率为 ' + str(all_user_acc))
+        print ('所有用户中预测购买用户的召回率' + str(all_user_recall))
+        print ('所有用户中预测购买商品的准确率为 ' + str(all_item_acc))
+        print ('所有用户中预测购买商品的召回率' + str(all_item_recall))
+        print ('F11=' + str(F11))
+        print ('F12=' + str(F12))
+        print ('score=' + str(score))
     return score
