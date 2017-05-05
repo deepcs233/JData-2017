@@ -46,12 +46,14 @@ def eval(pred, label, verbose = False):
 
     if (all_user_recall + all_user_acc) == 0:
         F11 = 0
-        F12 = 0
-        score = 0
     else:
         F11 = 6.0 * all_user_recall * all_user_acc / (5.0 * all_user_recall + all_user_acc)
+
+    if (all_item_recall + all_item_acc) == 0:
+        F12 = 0
+    else:
         F12 = 5.0 * all_item_acc * all_item_recall / (2.0 * all_item_recall + 3 * all_item_acc)
-        score = 0.4 * F11 + 0.6 * F12
+    score = 0.4 * F11 + 0.6 * F12
 
     if verbose:
         print ('所有用户中预测购买用户的准确率为 ' + str(all_user_acc))
