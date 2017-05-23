@@ -101,8 +101,8 @@ def get_accumulate_action_feat(data, start_date, end_date):
     del actions['type']
     del actions['time']
     del actions['weights']
-    actions = actions.groupby(['user_id', 'sku_id','cate'], as_index=False).sum()
-    actions = actions[['user_id', 'sku_id','cate','action_1', 'action_2', 'action_3', 'action_4', 'action_5','action_6']]
+    actions = actions.groupby(['user_id', 'sku_id','cate','brand'], as_index=False).sum()
+    actions = actions[['user_id', 'sku_id','cate','brand','action_1', 'action_2', 'action_3', 'action_4', 'action_5','action_6']]
 
     return actions
 
@@ -124,7 +124,9 @@ def get_user_active(data, start_date, end_date):
     actions = pd.concat([actions, df], axis=1)  # type: pd.DataFrame
     actions = actions.groupby(['user_id'], as_index=False).sum()
 
-    return actions[['user_id','%s-%s-user_active_1' % (str(start_date), str(end_date))]]
+    return actions[['user_id','%s-%s-user_active_1' % (str(start_date), str(end_date)),
+                    '%s-%s-user_active_4' % (str(start_date), str(end_date)),
+                    '%s-%s-user_active_2' % (str(start_date), str(end_date)),]]
 
 def get_product_active(data, start_date, end_date):
     actions = get_data_by_date(data, start_date, end_date)
@@ -133,16 +135,66 @@ def get_product_active(data, start_date, end_date):
     actions = pd.concat([actions, df], axis=1)  # type: pd.DataFrame
     actions = actions.groupby(['sku_id'], as_index=False).sum()
 
-    return actions[['sku_id','%s-%s-product_active_1' % (str(start_date), str(end_date))]]
+    return actions[['sku_id','%s-%s-product_active_1' % (str(start_date), str(end_date)),
+                    '%s-%s-product_active_4' % (str(start_date), str(end_date)),
+                    '%s-%s-product_active_2' % (str(start_date), str(end_date)),]]
 
 
 def get_cate_info(data):
     actions = data[['cate', 'type']]
     df = pd.get_dummies(actions['type'], prefix='cate_act')
     actions = pd.concat([actions, df], axis=1)  # type: pd.DataFrame
-    actions = actions.groupby(['cate'], as_index=False).sum()
     del actions['type']
+    actions = actions.groupby(['cate'], as_index=False).sum()
+
     return actions
+
+def get_brand_info(data):
+    actions = data[['brand', 'type']]
+    df = pd.get_dummies(actions['type'], prefix='brand_act')
+    actions = pd.concat([actions, df], axis=1)  # type: pd.DataFrame
+    del actions['type']
+    df_a = actions.groupby(['brand'], as_index=False).sum()
+
+    #　构造转化率字段
+    df_a['brand_buy_addcart_ratio'] = df_a['brand_act_4'] /  df_a['brand_act_2']
+    df_a['brand_buy_delcart_ratio'] = df_a['brand_act_4'] / df_a['brand_act_3'] 
+    df_a['brand_buy_browse_ratio'] = df_a['brand_act_4'] /  df_a['brand_act_1']
+    df_a['brand_buy_click_ratio'] = df_a['brand_act_4'] /  df_a['brand_act_6']
+    df_a['brand_buy_favor_ratio'] = df_a['brand_act_4'] /  df_a['brand_act_5']
+    
+    # 将大于１的转化率字段置为１(100%)
+    df_a.ix[df_a['brand_buy_addcart_ratio'] > 1., 'brand_buy_addcart_ratio'] = 1.
+    df_a.ix[df_a['brand_buy_delcart_ratio'] > 1., 'brand_del_addcart_ratio'] = 1.
+    df_a.ix[df_a['brand_buy_browse_ratio'] > 1., 'brand_buy_browse_ratio'] = 1.
+    df_a.ix[df_a['brand_buy_click_ratio'] > 1., 'brand_buy_click_ratio'] = 1.
+    df_a.ix[df_a['brand_buy_favor_ratio'] > 1., 'brand_buy_favor_ratio'] = 1.
+    
+    return df_a
+
+def get_user_mean_std(df,end_date=(4,15)):
+
+    actions = df[['user_id', 'type','time']]
+    df = pd.get_dummies(actions['type'], prefix='user_act')
+    actions = pd.concat([actions, df], axis=1) # type: pd.DataFrame
+
+
+    end_date = '2016-0' + str(end_date[0]) + '-' + '{:0>2}'.format(end_date[1]) \
+               + ' 23:59:59'
+
+    #近期行为按时间衰减
+    actions['days'] = actions['time'].map(lambda x: datetime.strptime(end_date, '%Y-%m-%d %H:%M:%S') \
+                                             - datetime.strptime(x, '%Y-%m-%d %H:%M:%S'))
+    actions['days'] = actions['days'].map(lambda x: x.days)
+    del actions['type']
+    del actions['time']
+    actions = actions.groupby(['user_id','days'],as_index=False).sum()
+    del actions['days']
+    df_1 = actions.groupby('user_id', as_index=False).var()
+    df_2 = actions.groupby('user_id', as_index=False).mean()
+    df = pd.merge(df_2,df_1,how='left',on='user_id')
+    df['user_id'] = df['user_id'].astype(np.int32)
+    return df
 
 def get_type_count(group):
     behavior_type = group.type.astype(int)
@@ -155,36 +207,117 @@ def get_type_count(group):
 
     return group[['user_id', 'sku_id', 'browse_num']]
 
-def get_user_item_rank(df):
+def get_ui_num(group):
+        group['ui_num'] = len(group)
+        return group
+    
+def get_user_sku_rank(df):
+    df = df[['user_id', 'sku_id', 'type']]
+
     def get_rank(group):
-        return pd.concat([pd.DataFrame(np.sort(group['browse_num'])),pd.DataFrame(range(len(group)))],axis=1)
-    df_tmp = df.groupby(['user_id', 'sku_id'], as_index=False).apply(get_type_count)
-    
+        num = len(group)
+        group = group.sort_values('ui_num')
+        group = group.reset_index()
+        del group['index']
+        del group['ui_num']
+        group = pd.concat([group,pd.DataFrame(list(range(num)),columns=['user_sku_rank'])],
+                          axis = 1)
+        return group
+    df = df.groupby(['user_id', 'sku_id'], as_index=False).apply(get_ui_num)
+    del df['type']
+    df = df.drop_duplicates(['user_id','sku_id'])
+    df = df.groupby('user_id',as_index=False).apply(get_rank)
+    df = df.reset_index()
+    del df['level_0']
+    del df['level_1']
+    return df
 
-
+def get_sku_rank(df):
+    df = df[['sku_id', 'type']]
     
+    df = df.groupby(['sku_id'], as_index=False).apply(get_ui_num)
+    del df['type']
+    df = df.drop_duplicates()
+    num = len(df)
+    df = df.sort_values('ui_num')
+    df = df.reset_index()
+    del df['index']
+    del df['ui_num']
+    df = pd.concat([df ,pd.DataFrame(list(range(num)),columns=['sku_rank'])],
+                          axis = 1)
+    return df
+
+def get_cate_sku_rank(df):
+    df = df[['cate', 'sku_id', 'type']]
+
+    def get_rank(group):
+        num = len(group)
+        group = group.sort_values('ui_num')
+        group = group.reset_index()
+        del group['index']
+        del group['ui_num']
+        group = pd.concat([group,pd.DataFrame(list(range(num)),columns=['cate_sku_rank'])],
+                          axis = 1)
+        return group
+    df = df.groupby(['cate', 'sku_id'], as_index=False).apply(get_ui_num)
+    del df['type']
+    df = df.drop_duplicates(['cate','sku_id'])
+    df = df.groupby('cate',as_index=False).apply(get_rank)
+    df = df.reset_index()
+    del df['level_0']
+    del df['level_1']
+    del df['cate']
+    return df
+    return df
 
 def get_train_data(reuse = False):
 
     if reuse:
         df = pd.read_csv(TMP_MINI_TRAIN)
     else:
-        df = pd.read_csv(MINI_ACT_TRAIN )
+        df = pd.read_csv(MINI_ACT_TRAIN)
         df = get_data_by_date(df, (3,25), (4,10))
 
         
-        print ('ok')
-        df = df[['user_id', 'sku_id', 'type', 'time', 'cate']]
+        print ('load ok')
+        brand_info = pd.read_csv('cache/train_brand_info.csv')
+##        brand_info = get_brand_info(df)
+##        brand_info.to_csv('cache/train_brand_info.csv',index=False)
+        
+        user_mean_std = pd.read_csv('cache/train_user_mean_std.csv')    
+##        user_mean_std = get_user_mean_std(df)
+##        user_mean_std.to_csv('cache/train_user_mean_std.csv',index=False)
+        df = df[['user_id', 'sku_id', 'type', 'time', 'cate', 'brand']]
 
+        df_last3 = get_data_by_date(df, (4,8), (4,10))
 
+        # 提取每个user对sku的关注度排名
+        user_sku_rank = pd.read_csv('cache/train_user_sku_rank.csv')
+##        user_sku_rank = get_user_sku_rank(df_last3)
+##        user_sku_rank.to_csv('cache/train_user_sku_rank.csv',index=False)
+
+        # 提取sku被关注度排名
+        sku_rank = get_sku_rank(df_last3)
+        
+        # 提取每个cate的sku的关注度排名
+        cate_sku_rank = get_cate_sku_rank(df_last3)
+        print('ok')
         # 提取最后一天UI特征，是否添加购物车且没有买东西
-        df_last = get_data_by_date(df, (4,9), (4,10))
-        df_last = df_last.groupby(['user_id','sku_id'], as_index=False).apply(simple_choose)
-        df_last = df_last.drop_duplicates()
-
+        df_last_two = pd.read_csv('cache/train_df_last_two.csv')
+##        df_last_two = get_data_by_date(df, (4,9), (4,10))
+##        df_last_two = df_last_two.groupby(['user_id','sku_id'], as_index=False).apply(simple_choose)
+##        df_last_two = df_last_two.drop_duplicates()
+##        df_last_two.to_csv('cache/train_df_last_two.csv',index=False)
+        df_last_one = pd.read_csv('cache/train_df_last_one.csv')
+##        df_last_one = get_data_by_date(df, (4,10), (4,10))
+##        df_last_one = df_last_one.groupby(['user_id','sku_id'], as_index=False).apply(simple_choose)
+##        df_last_one = df_last_one.drop_duplicates()
+##        df_last_one.to_csv('cache/train_df_last_one.csv',index=False)
+        
+        print('ok')
         # 计算用户在最后1,2,3,5天的活跃度特征（以浏览量计）
         df_user_active = None
-        for i in [6,8,9,10]:
+        for i in [1,3,5,6,8,9,10]:
             if df_user_active is None:
                 df_user_active = get_user_active(df, (4,i), (4,10))
             else:
@@ -194,14 +327,14 @@ def get_train_data(reuse = False):
         
         # 计算商品在最后1,2,3,5天的活跃度特征（以浏览量计）
         df_product_active = None
-        for i in [6,8,9,10]:
+        for i in [1,3,5,6,8,9,10]:
             if df_product_active is None:
                 df_product_active = get_product_active(df, (4,i), (4,10))
             else:
                 df_product_active = pd.merge(df_product_active, get_product_active(df, (4,i), (4,10)), how='left',
                                           on=['sku_id'])
         df_product_active = df_product_active.fillna(0)
-
+        print('ok')
         # 计算cate-UI的交叉特征
         df_cate_info = get_cate_info(df)
         df_cate_info = df_cate_info.fillna(0)
@@ -213,7 +346,7 @@ def get_train_data(reuse = False):
         
         # 创建用户在n天内与物品的交互特征
         df_act = None
-        for start_date in [(3,25),(4,1),(4,3),(4,6),(4,8),(4,9),(4,10)]:
+        for start_date in [(4,1),(4,3),(4,6),(4,7),(4,8),(4,9),(4,10)]:
             if df_act is None:
                 df_act = get_action_feat(df, start_date, (4,10))
             else:
@@ -222,21 +355,39 @@ def get_train_data(reuse = False):
         
 
         # 计算用户在n天内与物品的滑动特征，并完成合并
-        for i in [5]:#[1,3,5,7,8,9]:
-            print (i)
-            df = get_accumulate_action_feat(df, (4,i), (4,10))
-            # df = pd.merge(df, df_g, how='left', on=['user_id', 'sku_id', 'cate'])
+        '''
+        df_1 = get_accumulate_action_feat(df, (4,3), (4,10))
+        df_2 = get_accumulate_action_feat(df, (4,5), (4,10))
+        df_3 = get_accumulate_action_feat(df, (4,7), (4,10))
+        df = pd.merge(df_1, df_2, how='left', on=['user_id', 'sku_id', 'cate'])
+        df = pd.merge(df, df_3, how='left', on=['user_id', 'sku_id', 'cate'])
+        '''
+        # df = pd.read_csv('cache/mini_train_accum_feat.csv')
+        
+        df = get_accumulate_action_feat(df, (4,5), (4,10))
+        df.to_csv('cache/mini_train_accum_feat.csv', index=False)
+
         
         # 添加cate_i
         cate =pd.get_dummies(df['cate'], prefix='cate')
         df = pd.concat([df, cate], axis=1)
 
-        df = pd.merge(df, df_last, how='left', on=['user_id', 'sku_id'])
+        df = pd.merge(df, df_last_one, how='left', on=['user_id', 'sku_id'])
+        df = pd.merge(df, df_last_two, how='left', on=['user_id', 'sku_id'])
+                
         df = pd.merge(df, df_user_active, how='left', on='user_id')
         df = pd.merge(df, df_product_active, how='left', on='sku_id')
         df = pd.merge(df, df_cate_info, how='left', on='cate')
 
+        df = pd.merge(df, df_act, how='left', on=['user_id', 'sku_id'])
 
+        df = pd.merge(df, cate_sku_rank, how='left',on=['sku_id'])
+        df = pd.merge(df, sku_rank, how='left',on=['sku_id'])
+        df = pd.merge(df, user_sku_rank, how='left',on=['user_id','sku_id'])
+
+        df = pd.merge(df, brand_info, how='left',on='brand')
+        df = pd.merge(df, user_mean_std, how='left', on='user_id')
+        
         del cate
         del df['cate']
 
@@ -249,10 +400,10 @@ def get_train_data(reuse = False):
         '''
         df_u = pd.read_csv(MINI_USER_TRAIN)
         df = pd.merge(df, df_u, how='left', on='user_id')
-        print ('ok')
+
         df_p = pd.read_csv(ALL_PRODUCT_FILE)
         df = pd.merge(df, df_p, how='left', on='sku_id')
-        print ('ok')
+
         df_l = pd.read_csv(MINI_TRAIN_LABEL)
         df_l['label'] = 1
         df = pd.merge(df, df_l, how='left', on=['user_id', 'sku_id'])
@@ -265,7 +416,7 @@ def get_train_data(reuse = False):
 
         del df['Unnamed: 0_x']
         del df['Unnamed: 0_y']
-        del df['Unnamed: 0']
+        df = df.drop_duplicates()
         df.to_csv(TMP_MINI_TRAIN,index=False)
     
     df = df.drop_duplicates()
@@ -275,30 +426,46 @@ def get_train_data(reuse = False):
     del df['user_id']
     del df['sku_id']
     del df['label']
-    
+
+    print('Success')
 
     return df, label, users
 
 def get_test_data(reuse = False):
     if reuse:
         df = pd.read_csv(TMP_MINI_TEST)
-    else
+    else:
         df = pd.read_csv(MINI_ACT_TEST)
         df = get_data_by_date(df, (3,25), (4,10))
 
         
         print ('ok')
-        df = df[['user_id', 'sku_id', 'type', 'time', 'cate']]
+        brand_info = get_brand_info(df)
+        user_mean_std = get_user_mean_std(df)
+        df = df[['user_id', 'sku_id', 'type', 'time', 'cate', 'brand']]
 
+        df_last3 = get_data_by_date(df, (4,8), (4,10))
 
+        # 提取每个user对sku的关注度排名
+        user_sku_rank = get_user_sku_rank(df_last3)
+
+        # 提取sku被关注度排名
+        sku_rank = get_sku_rank(df_last3)
+        
+        # 提取每个cate的sku的关注度排名
+        cate_sku_rank = get_cate_sku_rank(df_last3)
+        
         # 提取最后一天UI特征，是否添加购物车且没有买东西
-        df_last = get_data_by_date(df, (4,9), (4,10))
-        df_last = df_last.groupby(['user_id','sku_id'], as_index=False).apply(simple_choose)
-        df_last = df_last.drop_duplicates()
-
+        df_last_two = get_data_by_date(df, (4,9), (4,10))
+        df_last_two = df_last_two.groupby(['user_id','sku_id'], as_index=False).apply(simple_choose)
+        df_last_two = df_last_two.drop_duplicates()
+        
+        df_last_one = get_data_by_date(df, (4,10), (4,10))
+        df_last_one = df_last_one.groupby(['user_id','sku_id'], as_index=False).apply(simple_choose)
+        df_last_one = df_last_one.drop_duplicates()
         # 计算用户在最后1,2,3,5天的活跃度特征（以浏览量计）
         df_user_active = None
-        for i in [6,8,9,10]:
+        for i in [1,3,5,6,8,9,10]:
             if df_user_active is None:
                 df_user_active = get_user_active(df, (4,i), (4,10))
             else:
@@ -308,7 +475,7 @@ def get_test_data(reuse = False):
         
         # 计算商品在最后1,2,3,5天的活跃度特征（以浏览量计）
         df_product_active = None
-        for i in [6,8,9,10]:
+        for i in [1,3,5,6,8,9,10]:
             if df_product_active is None:
                 df_product_active = get_product_active(df, (4,i), (4,10))
             else:
@@ -327,7 +494,7 @@ def get_test_data(reuse = False):
         
         # 创建用户在n天内与物品的交互特征
         df_act = None
-        for start_date in [(3,25),(4,1),(4,3),(4,6),(4,8),(4,9),(4,10)]:
+        for start_date in [(4,1),(4,3),(4,6),(4,7),(4,8),(4,9),(4,10)]:
             if df_act is None:
                 df_act = get_action_feat(df, start_date, (4,10))
             else:
@@ -336,21 +503,33 @@ def get_test_data(reuse = False):
         
 
         # 计算用户在n天内与物品的滑动特征，并完成合并
-        for i in [5]:#[1,3,5,7,8,9]:
-            print (i)
-            df = get_accumulate_action_feat(df, (4,i), (4,10))
-            # df = pd.merge(df, df_g, how='left', on=['user_id', 'sku_id', 'cate'])
+        '''
+        df_1 = get_accumulate_action_feat(df, (4,3), (4,10))
+        df_2 = get_accumulate_action_feat(df, (4,5), (4,10))
+        df_3 = get_accumulate_action_feat(df, (4,7), (4,10))
+        df = pd.merge(df_1, df_2, how='left', on=['user_id', 'sku_id', 'cate'])
+        df = pd.merge(df, df_3, how='left', on=['user_id', 'sku_id', 'cate'])
+        '''
+        # df = pd.read_csv('cache/mini_test_accum_feat.csv')
+        df = get_accumulate_action_feat(df, (4,5), (4,10))
+        df.to_csv('cache/mini_test_accum_feat.csv', index=False)
         
-        # 添加cate_i
         cate =pd.get_dummies(df['cate'], prefix='cate')
         df = pd.concat([df, cate], axis=1)
 
-        df = pd.merge(df, df_last, how='left', on=['user_id', 'sku_id'])
+        df = pd.merge(df, df_last_one, how='left', on=['user_id', 'sku_id'])
+        df = pd.merge(df, df_last_two, how='left', on=['user_id', 'sku_id'])
         df = pd.merge(df, df_user_active, how='left', on='user_id')
         df = pd.merge(df, df_product_active, how='left', on='sku_id')
         df = pd.merge(df, df_cate_info, how='left', on='cate')
+        df = pd.merge(df, df_act, how='left', on=['user_id', 'sku_id'])
 
-
+        df = pd.merge(df, cate_sku_rank, how='left',on=['sku_id'])
+        df = pd.merge(df, sku_rank, how='left',on=['sku_id'])
+        df = pd.merge(df, user_sku_rank, how='left',on=['user_id','sku_id'])
+        
+        df = pd.merge(df, brand_info, how='left',on='brand')
+        df = pd.merge(df, user_mean_std, how='left', on='user_id')
         del cate
         del df['cate']
 
@@ -379,8 +558,9 @@ def get_test_data(reuse = False):
 
         del df['Unnamed: 0_x']
         del df['Unnamed: 0_y']
-        del df['Unnamed: 0']
-        df.to_csv(TMP_MINI_TEST.index=False)
+        if 'Unnamed: 0' in df:
+            del df['Unnamed: 0']
+        df.to_csv(TMP_MINI_TEST, index=False)
     df = df.drop_duplicates()
     label = pd.DataFrame(df['label'].copy())
     users = df[['user_id', 'sku_id']].copy()
@@ -405,31 +585,57 @@ def gen_submit_data(reuse = False):
 
         
         print ('ok')
-        df = df[['user_id', 'sku_id', 'type', 'time', 'cate']]
+        brand_info = get_brand_info(df)
+##        user_mean_std = pd.read_csv('cache/submit_user_mean_std.csv')
+##        user_mean_std = get_user_mean_std(df)
+        user_mean_std.to_csv('cache/submit_user_mean_std.csv',index=False)
+        df = df[['user_id', 'sku_id', 'type', 'time', 'cate', 'brand']]
+        
+        df_last3 = get_data_by_date(df, (4,8), (4,10))
 
+        # 提取每个user对sku的关注度排名
+        # user_sku_rank = pd.read_csv('cache/submit_user_sku_rank.csv')
+        user_sku_rank = get_user_sku_rank(df_last3)
+        user_sku_rank.to_csv('cache/submit_user_sku_rank.csv',index=False)
 
+        # 提取sku被关注度排名
+        sku_rank = get_sku_rank(df_last3)
+        
+        # 提取每个cate的sku的关注度排名
+        cate_sku_rank = get_cate_sku_rank(df_last3)
+        print('ok')
+        
         # 提取最后一天UI特征，是否添加购物车且没有买东西
-        df_last = get_data_by_date(df, (4,14), (4,15))
-        df_last = df_last.groupby(['user_id','sku_id'], as_index=False).apply(simple_choose)
-        df_last = df_last.drop_duplicates()
-
+        df_last_two = pd.read_csv('cache/submit_last_two.csv')
+##        df_last_two = get_data_by_date(df, (4,14), (4,15))
+##        df_last_two = df_last_two.groupby(['user_id','sku_id'], as_index=False).apply(simple_choose)
+##        df_last_two = df_last_two.drop_duplicates()
+##        df_last_two.to_csv('cache/submit_last_two.csv',index=False)
+        print('ok')
+        
+        df_last_one = pd.read_csv('cache/submit_last_one.csv')
+##        df_last_one = get_data_by_date(df, (4,14), (4,15))
+##        df_last_one = df_last_one.groupby(['user_id','sku_id'], as_index=False).apply(simple_choose)
+##        df_last_one = df_last_one.drop_duplicates()
+##        df_last_two.to_csv('cache/submit_last_one.csv',index=False)
+        print('ok')
         # 计算用户在最后1,2,3,5天的活跃度特征（以浏览量计）
         df_user_active = None
-        for i in [6,8,9,10]:
+        for i in [1,3,5,6,8,9,10]:
             if df_user_active is None:
                 df_user_active = get_user_active(df, (4,i+5), (4,15))
             else:
-                df_user_active = pd.merge(df_user_active, get_user_active(df, (4,i), (4,10)), how='left',
+                df_user_active = pd.merge(df_user_active, get_user_active(df, (4,i+5), (4,15)), how='left',
                                           on=['user_id'])          
         df_user_active = df_user_active.fillna(0)
-        
+        print('ok')
         # 计算商品在最后1,2,3,5天的活跃度特征（以浏览量计）
         df_product_active = None
-        for i in [6,8,9,10]:
+        for i in [1,3,5,6,8,9,10]:
             if df_product_active is None:
                 df_product_active = get_product_active(df, (4,i+5), (4,15))
             else:
-                df_product_active = pd.merge(df_product_active, get_product_active(df, (4,i), (4,10)), how='left',
+                df_product_active = pd.merge(df_product_active, get_product_active(df, (4,i+5), (4,15)), how='left',
                                           on=['sku_id'])
         df_product_active = df_product_active.fillna(0)
 
@@ -444,7 +650,7 @@ def gen_submit_data(reuse = False):
         
         # 创建用户在n天内与物品的交互特征
         df_act = None
-        for start_date in [(4,1),(4,6),(4,8),(4,11),(4,13),(4,14),(4,15)]:
+        for start_date in [(4,6),(4,9),(4,11),(4,12),(4,13),(4,14),(4,15)]:
             if df_act is None:
                 df_act = get_action_feat(df, start_date, (4,15))
             else:
@@ -453,21 +659,34 @@ def gen_submit_data(reuse = False):
         
 
         # 计算用户在n天内与物品的滑动特征，并完成合并
-        for i in [5]:#[1,3,5,7,8,9]:
-            print (i)
-            df = get_accumulate_action_feat(df, (4,i+5), (4,15))
-            # df = pd.merge(df, df_g, how='left', on=['user_id', 'sku_id', 'cate'])
-        
+        '''
+        df_1 = get_accumulate_action_feat(df, (4,8), (4,15))
+        df_2 = get_accumulate_action_feat(df, (4,10), (4,15))
+        df_3 = get_accumulate_action_feat(df, (4,12), (4,15))
+        df = pd.merge(df_1, df_2, how='left', on=['user_id', 'sku_id', 'cate'])
+        df = pd.merge(df, df_3, how='left', on=['user_id', 'sku_id', 'cate'])
+        '''
+        df = pd.read_csv('cache/submit_accumu.csv')
+##        df = get_accumulate_action_feat(df, (4,10), (4,15))
+##        df.to_csv('cache/submit_accumu.csv',index=False)
         # 添加cate_i
         cate =pd.get_dummies(df['cate'], prefix='cate')
         df = pd.concat([df, cate], axis=1)
 
-        df = pd.merge(df, df_last, how='left', on=['user_id', 'sku_id'])
+        df = pd.merge(df, df_last_one, how='left', on=['user_id', 'sku_id'])
+        df = pd.merge(df, df_last_two, how='left', on=['user_id', 'sku_id'])
         df = pd.merge(df, df_user_active, how='left', on='user_id')
         df = pd.merge(df, df_product_active, how='left', on='sku_id')
         df = pd.merge(df, df_cate_info, how='left', on='cate')
+        df = pd.merge(df, df_act, how='left', on=['user_id', 'sku_id'])
 
+        df = pd.merge(df, cate_sku_rank, how='left',on=['sku_id'])
+        df = pd.merge(df, sku_rank, how='left',on=['sku_id'])
+        df = pd.merge(df, user_sku_rank, how='left',on=['user_id','sku_id'])
 
+        df = pd.merge(df, brand_info, how='left',on='brand')
+        df = pd.merge(df, user_mean_std, how='left', on='user_id')
+        
         del cate
         del df['cate']
 
@@ -585,10 +804,12 @@ def genResult():
     pred.to_csv(RESULT_FILE, index=False)
 
 if __name__ == '__main__':
+
+    print ('Start')
     # raw
-    df_r, label_r, users_r = get_train_data()
+    df_r, label_r, users_r = get_train_data(True)
     # test
-    df_t, label_t, users_t = get_test_data()
+    df_t, label_t, users_t = get_test_data(True)
 
 
 
@@ -621,3 +842,6 @@ if __name__ == '__main__':
 score, model = train_predict(df_r, label_r, users_r, df_t, label_t, users_t, 0.026, \
                              {'n_estimators': 100, 'max_depth' : 125})
 '''
+
+
+

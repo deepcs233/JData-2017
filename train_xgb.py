@@ -41,32 +41,6 @@ TMP_USER_SUBMIT = 'cache/user_submit.csv'
 # Display format
 pd.options.display.float_format = '{:,.3f}'.format
 
-
-# raw
-df_r, label_r, users_r = genfeat.get_train_data()
-# test
-df_t, label_t, users_t = genfeat.get_test_data()
-
-# UnderSample
-df_r, label_r = genfeat.underSample(df_r, label_r, prob = 0.028)
-
-
-dtrain=xgb.DMatrix(df_r.values[:], label=label_r)
-dtest=xgb.DMatrix(df_t.values[:], label=label_t)
-param = {'learning_rate' : 0.1, 'n_estimators': 1000, 'max_depth': 3, 
-        'min_child_weight': 5, 'gamma': 0, 'subsample': 1.0, 'colsample_bytree': 0.8,
-        'scale_pos_weight': 1, 'eta': 0.05, 'silent': 1, 'objective': 'binary:logistic'}
-num_round = 212
-param['nthread'] = 4
-param['eval_metric'] = "auc"
-plst = list(param.items())
-plst += [('eval_metric', 'logloss')]
-evallist = [(dtest, 'eval'), (dtrain, 'train')]
-bst=xgb.train( plst, dtrain, num_round, evallist)
-'''
-sub_user_index, sub_trainning_date, sub_label = make_train_set(sub_start_date, sub_end_date,
-                                                               sub_test_start_date, sub_test_end_date)
-'''
 def test(threshold = 0.5,verbose = True):
     dtest = xgb.DMatrix(df_t.values[:])
     y = bst.predict(dtest)
@@ -79,14 +53,76 @@ def test(threshold = 0.5,verbose = True):
     return eval.eval(pr,yture, verbose)
 
 
-def submit():
+def submit(threshold = 0.57):
     df_s,users_s = genfeat.gen_submit_data(True)
     dtest = xgb.DMatrix(df_s.values[:])
     y = bst.predict(dtest)
     pred = pd.concat([users_s,pd.DataFrame(y)],axis=1,ignore_index=False)
-    pred = pred[pred[0]>0.57]
+    pred = pred[pred[0] > threshold]
     del pred[0]
     pred = pred.drop_duplicates('user_id')
     pred['user_id'] = pred['user_id'].astype(np.int32)
     pred.to_csv(RESULT_FILE, index=False)
     
+
+def train(underSample = 0.03):
+    df, label = genfeat.underSample(df_r, label_r, prob = underSample)
+    dtrain=xgb.DMatrix(df.values[:], label=label)
+    dtest=xgb.DMatrix(df_t.values[:], label=label_t)
+    param = {'learning_rate' : 0.1, 'n_estimators': 1000, 'max_depth': 3, 
+            'min_child_weight': 5, 'gamma': 0, 'subsample': 1.0, 'colsample_bytree': 0.8,
+            'scale_pos_weight': 1, 'eta': 0.05, 'silent': 1, 'objective': 'binary:logistic'}
+    num_round = 200
+    param['nthread'] = 4
+    param['eval_metric'] = "auc"
+    plst = list(param.items())
+    plst += [('eval_metric', 'logloss')]
+    evallist = [(dtest, 'eval'), (dtrain, 'train')]
+    bst=xgb.train( plst, dtrain, num_round, evallist)
+    return bst
+
+# raw
+df_r, label_r, users_r = genfeat.get_train_data(True)
+# test
+df_t, label_t, users_t = genfeat.get_test_data()
+
+# UnderSample
+df, label = genfeat.underSample(df_r, label_r, prob = 0.07)
+
+
+dtrain=xgb.DMatrix(df.values[:], label=label)
+dtest=xgb.DMatrix(df_t.values[:], label=label_t)
+param = {'learning_rate' : 0.1, 'n_estimators': 1000, 'max_depth': 3, 
+        'min_child_weight': 5, 'gamma': 0, 'subsample': 1.0, 'colsample_bytree': 0.8,
+        'scale_pos_weight': 1, 'eta': 0.05, 'silent': 1, 'objective': 'binary:logistic'}
+num_round = 212
+param['nthread'] = 4
+param['eval_metric'] = "auc"
+plst = list(param.items())
+plst += [('eval_metric', 'logloss')]
+evallist = [(dtest, 'eval'), (dtrain, 'train')]
+
+
+bst=xgb.train( plst, dtrain, num_round, evallist)
+
+
+'''
+for us in [0.005,0.01,0.02,0.03,0.05,0.1]:
+    print (us)
+    s = []
+    bst = train(us)
+    for i in range(100):
+        s.append(test(float(i) / 100, False))
+    print (us, np.mean(s),np.max(s),np.argmax(s))
+'''
+'''
+0.005 0.039003686106 0.0830976759304 93
+0.01 0.0452831705126 0.089159058586 95
+0.02 0.0582761675191 0.101325068244 92
+0.03 0.0657887507501 0.130085527419 80
+0.05 0.064996306312 0.116630148012 65
+0.1 0.078423589542 0.143146796431 76
+0.2 0.0744781093009 0.162096774194 49
+0.3 0.0761843337437 0.174553933496 46
+0.5 0.0740337267381 0.183349721403 33
+'''

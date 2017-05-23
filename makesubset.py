@@ -147,11 +147,11 @@ def get_product_behavior(df_act):
     df_a['p_buy_favor_ratio'] = df_a['buy_num'] /  df_a['favor_num']
     
     # 将大于１的转化率字段置为１(100%)
-    df_a.ix[df_a['p_buy_addcart_ratio'] > 1., 'buy_addcart_ratio'] = 1.
-    df_a.ix[df_a['p_buy_delcart_ratio'] > 1., 'del_addcart_ratio'] = 1.
-    df_a.ix[df_a['p_buy_browse_ratio'] > 1., 'buy_browse_ratio'] = 1.
-    df_a.ix[df_a['p_buy_click_ratio'] > 1., 'buy_click_ratio'] = 1.
-    df_a.ix[df_a['p_buy_favor_ratio'] > 1., 'buy_favor_ratio'] = 1.
+    df_a.ix[df_a['p_buy_addcart_ratio'] > 1., 'p_buy_addcart_ratio'] = 1.
+    df_a.ix[df_a['p_buy_delcart_ratio'] > 1., 'p_del_addcart_ratio'] = 1.
+    df_a.ix[df_a['p_buy_browse_ratio'] > 1., 'p_buy_browse_ratio'] = 1.
+    df_a.ix[df_a['p_buy_click_ratio'] > 1., 'p_buy_click_ratio'] = 1.
+    df_a.ix[df_a['p_buy_favor_ratio'] > 1., 'p_buy_favor_ratio'] = 1.
 
     return df_a
 
@@ -160,7 +160,7 @@ with open('cache/users_set.pkl','r') as f:
     clean_users_set = pickle.load(f)
 
 MINI_TRAIN_NUM = int(nums * 0.8)
-MINI_TEST_NUM = int(nums * 0.95)
+MINI_TEST_NUM = int(nums * 1)
 '''
 TRAIN_NUM = int(nums * 0.6)
 VALID_NUM = int(nums * 0.8)
@@ -178,7 +178,7 @@ df[VALID_NUM: TEST_NUM].to_csv(USER_TEST, index=False)
 
 '''
 
-mini_user_train_set = set(df[: MINI_TRAIN_NUM]['user_id']) - clean_users_set
+mini_user_train_set = set(df[: MINI_TRAIN_NUM]['user_id']) #- clean_users_set
 mini_user_test_set = set(df[MINI_TRAIN_NUM: MINI_TEST_NUM]['user_id']) #- clean_users_set
 
 acts = []
